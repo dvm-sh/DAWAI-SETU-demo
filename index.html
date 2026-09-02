@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-50">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DAWAI-SETU | Healthcare Medicine Lifecycle Platform</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdfa', 100: '#ccfbf1', 500: '#14b8a6', 600: '#0d9488', 700: '#0f766e', 900: '#134e4a',
+                        },
+                        medical: {
+                            50: '#f0f9ff', 500: '#0ea5e9', 700: '#0369a1',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .timeline-line::before {
+            content: '';
+            position: absolute;
+            top: 15px; left: 18px; bottom: 0;
+            width: 2px;
+            background: #e2e8f0;
+            z-index: 0;
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col font-sans text-slate-800 antialiased selection:bg-brand-500 selection:text-white">
+
+    <header class="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-slate-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center gap-3 cursor-pointer" onclick="app.navigate('landing')">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-medical-500 flex items-center justify-center text-white shadow-md shadow-brand-500/20">
+                        <i data-lucide="activity" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <span class="font-bold text-xl tracking-tight text-slate-900">DAWAI<span class="text-brand-600">-SETU</span></span>
+                        <span class="block text-[10px] font-semibold tracking-widest text-slate-400 uppercase">Cheek Syndicate | SIH 2026</span>
+                    </div>
+                </div>
+
+                <nav class="hidden md:flex space-x-8 text-sm font-medium text-slate-600">
+                    <button onclick="app.navigate('landing')" class="hover:text-brand-600 transition-colors">Home</button>
+                    <button onclick="app.scrollToSection('workflow')" class="hover:text-brand-600 transition-colors">How It Works</button>
+                    <button onclick="app.scrollToSection('impact')" class="hover:text-brand-600 transition-colors">Impact & Analytics</button>
+                    <button onclick="app.navigate('emergency')" class="hover:text-brand-600 transition-colors flex items-center gap-1 text-red-600 font-semibold">
+                        <i data-lucide="siren" class="w-4 h-4"></i> Emergency Hub
+                    </button>
+                </nav>
+
+                <div class="flex items-center gap-3" id="auth-controls">
+                    </div>
+            </div>
+        </div>
+    </header>
+
+    <main id="app-viewport" class="flex-1">
+        </main>
+
+    <div id="modal-backdrop" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div id="modal-content" class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 overflow-hidden border border-slate-100">
+            </div>
+    </div>
+
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-3"></div>
+
+    <script>
+        // --- REACTIVE STATE STORE ---
+        const store = {
+            currentUser: { role: 'guest', name: 'Anonymous', orgId: null },
+            activeRole: 'donor', // 'donor' | 'recipient' | 'disposal_partner' | 'admin'
+            inventory: [
+                { id: 1, name: 'Paracetamol 500mg', category: 'Analgesics', batch: 'PR-2026-09', qty: 450, expiry: '2026-10-15', risk: 'High Risk', donor: 'City Healthcare Hospital', status: 'available' },
+                { id: 2, name: 'Amoxicillin 250mg', category: 'Antibiotics', batch: 'AM-2025-88', qty: 1200, expiry: '2026-11-20', risk: 'Low Risk', donor: 'Max Med Pharma', status: 'available' },
+                { id: 3, name: 'Azithromycin 500mg', category: 'Antibiotics', batch: 'AZ-2024-11', qty: 80, expiry: '2026-08-30', risk: 'Critical', donor: 'City Healthcare Hospital', status: 'expired' }
+            ],
+            transfers: [
+                { id: 'TR-8942', medicine: 'Paracetamol 500mg', qty: 200, donor: 'City Healthcare Hospital', recipient: 'Hope NGO Clinic', status: 'scheduled', step: 3 }
+            ],
+            disposals: [
+                { id: 'DIS-102', medicine: 'Azithromycin 500mg', qty: 80, donor: 'City Healthcare Hospital', partner: 'CleanBio Disposal Ltd', status: 'Pending Verification', batch: 'AZ-2024-11' }
+            ],
+            emergencyRequests: [
+                { id: 'EMG-01', medicine: 'ORS Solution Packets', qty: 1000, urgency: 'Critical', recipient: 'Flood Relief Camp Meerut', location: 'Meerut Sector 4', requiredBy: '2026-09-02' }
+            ]
+        };
+
+        // --- CORE APPLICATION ROUTER AND RENDERER ---
+        const app = {
+            init() {
+                this.renderNav();
+                this.navigate('landing');
+                lucide.createIcons();
+            },
+
+            switchRole(role) {
+                store.activeRole = role;
+                this.toast(`Switched perspective to ${role.replace('_', ' ').toUpperCase()}`, 'info');
+                this.navigate('dashboard');
+            },
+
+            navigate(view) {
+                const viewport = document.getElementById('app-viewport');
+                viewport.innerHTML = '';
+
+                switch (view) {
+                    case 'landing':
+                        viewport.innerHTML = this.views.landing();
+                        break;
+                    case 'dashboard':
+                        viewport.innerHTML = this.views.dashboard(store.activeRole);
+                        break;
+                    case 'emergency':
+                        viewport.innerHTML = this.views.emergency();
+                        break;
+                    default:
+                        viewport.innerHTML = this.views.landing();
+                }
+                lucide.createIcons();
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            },
+
+            scrollToSection(id) {
+                if (document.getElementById(id)) {
+                    document.getElementById(id).scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    this.navigate('landing');
+                    setTimeout(() => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' }), 100);
+                }
+            },
+
+            renderNav() {
+                const container = document.getElementById('auth-controls');
+                container.innerHTML = `
+                    <div class="flex items-center gap-2 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs font-semibold">
+                        <button onclick="app.switchRole('donor')" class="px-2.5 py-1 rounded-md ${store.activeRole==='donor'?'bg-white shadow text-slate-900':'text-slate-500'}">Donor</button>
+                        <button onclick="app.switchRole('recipient')" class="px-2.5 py-1 rounded-md ${store.activeRole==='recipient'?'bg-white shadow text-slate-900':'text-slate-500'}">Recipient</button>
+                        <button onclick="app.switchRole('disposal_partner')" class="px-2.5 py-1 rounded-md ${store.activeRole==='disposal_partner'?'bg-white shadow text-slate-900':'text-slate-500'}">Disposal</button>
+                        <button onclick="app.switchRole('admin')" class="px-2.5 py-1 rounded-md ${store.activeRole==='admin'?'bg-white shadow text-slate-900':'text-slate-500'}">Admin</button>
+                    </div>
+                    <button onclick="app.navigate('dashboard')" class="bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-all shadow-md shadow-brand-500/10">
+                        View App Dashboard
+                    </button>
+                `;
+            },
+
+            toast(message, type = 'success') {
+                const container = document.getElementById('toast-container');
+                const el = document.createElement('div');
+                const bg = type === 'success' ? 'bg-slate-900 text-white' : 'bg-brand-600 text-white';
+                el.className = `${bg} px-4 py-3 rounded-xl shadow-xl text-sm font-medium flex items-center gap-2 transition-all duration-300 transform translate-y-2 opacity-0`;
+                el.innerHTML = `<i data-lucide="info" class="w-4 h-4"></i> ${message}`;
+                container.appendChild(el);
+                lucide.createIcons();
+                setTimeout(() => el.classList.remove('translate-y-2', 'opacity-0'), 10);
+                setTimeout(() => {
+                    el.classList.add('opacity-0');
+                    setTimeout(() => el.remove(), 300);
+                }, 3000);
+            },
+
+            // --- VIEW MODULES ---
+            views: {
+                landing() {
+                    return `
+                    <div class="relative overflow-hidden bg-white border-b border-slate-100">
+                        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 lg:py-28">
+                            <div class="grid lg:grid-cols-2 gap-12 items-center">
+                                <div class="space-y-6">
+                                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-50 border border-brand-100 text-brand-700 text-xs font-semibold uppercase tracking-wider">
+                                        <i data-lucide="shield-check" class="w-4 h-4"></i> Smart India Hackathon 2026 Solution
+                                    </div>
+                                    <h1 class="text-4xl sm:text-5xl font-extrabold text-slate-900 tracking-tight leading-tight">
+                                        Connecting Medicines With Those Who Need Them, <span class="text-brand-600">Before They Waste.</span>
+                                    </h1>
+                                    <p class="text-lg text-slate-600 leading-relaxed">
+                                        DAWAI-SETU is an AI-driven healthcare platform tracking medicine lifecycles, accurately predicting surplus inventory, matching usable stock with verified recipient NGOs, and ensuring safe disposal of expired batches.
+                                    </p>
+                                    <div class="flex flex-wrap gap-4 pt-4">
+                                        <button onclick="app.navigate('dashboard')" class="bg-brand-600 hover:bg-brand-700 text-white font-bold px-6 py-3.5 rounded-xl transition-all shadow-lg shadow-brand-600/20 flex items-center gap-2">
+                                            Open Platform <i data-lucide="arrow-right" class="w-5 h-5"></i>
+                                        </button>
+                                        <button onclick="app.navigate('emergency')" class="bg-red-50 hover:bg-red-100 text-red-600 font-bold px-6 py-3.5 rounded-xl border border-red-200 transition-all flex items-center gap-2">
+                                            <i data-lucide="siren" class="w-5 h-5"></i> Emergency Requests
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="bg-slate-900 rounded-3xl p-6 text-white shadow-2xl relative border border-slate-800">
+                                    <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+                                        <span class="text-xs font-mono text-slate-400">LIVE SYSTEM PIPELINE</span>
+                                        <span class="inline-flex items-center gap-1.5 text-xs text-brand-500 font-medium"><span class="w-2 h-2 rounded-full bg-brand-500 animate-pulse"></span> Dynamic Engine</span>
+                                    </div>
+                                    <div class="mt-6 space-y-4">
+                                        <div class="p-4 rounded-xl bg-slate-800/60 border border-slate-700/50 flex items-center justify-between">
+                                            <div>
+                                                <p class="text-xs text-slate-400">Inventory Monitoring</p>
+                                                <p class="text-sm font-semibold">Paracetamol 500mg Batch PR-2026</p>
+                                            </div>
+                                            <span class="px-2 py-1 rounded text-xs bg-emerald-500/10 text-emerald-400 font-mono">Qty: 450</span>
+                                        </div>
+                                        <div class="p-4 rounded-xl bg-slate-800/60 border border-slate-700/50 flex items-center justify-between">
+                                            <div>
+                                                <p class="text-xs text-slate-400">AI Surplus Model Assessment</p>
+                                                <p class="text-sm font-semibold text-amber-400">88.4% Likelihood of Expiry Unused</p>
+                                            </div>
+                                            <span class="px-2 py-1 rounded text-xs bg-amber-500/10 text-amber-400 font-mono">High Risk</span>
+                                        </div>
+                                        <div class="p-4 rounded-xl bg-slate-800/60 border border-slate-700/50 flex items-center justify-between">
+                                            <div>
+                                                <p class="text-xs text-slate-400">Smart Logistics Redistribution</p>
+                                                <p class="text-sm font-semibold">Matched: Hope NGO Clinic (12km)</p>
+                                            </div>
+                                            <span class="px-2.5 py-1 rounded-full text-xs bg-brand-500/20 text-brand-400 font-semibold">94% Match</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="workflow" class="py-20 bg-slate-50">
+                        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                            <div class="text-center max-w-3xl mx-auto mb-16">
+                                <h2 class="text-xs font-bold uppercase tracking-widest text-brand-600">End-to-End Governance</h2>
+                                <h3 class="text-3xl font-extrabold text-slate-900 mt-2">The Complete DAWAI-SETU Medicine Lifecycle</h3>
+                            </div>
+                            <div class="grid md:grid-cols-4 gap-6">
+                                ${[
+                                    { step: '01', title: 'Inventory Entry', desc: 'Hospitals & Pharmacies add batch, quantity, & expiry metrics into structured ledgers.' },
+                                    { step: '02', title: 'AI Surplus Prediction', desc: 'ML models analyze local consumption rates against expiry dates to flag unused stock risk.' },
+                                    { step: '03', title: 'Smart Redistribution', desc: 'Algorithmic matching routes verified surplus to nearby eligible recipient organizations.' },
+                                    { step: '04', title: 'Authorized Disposal', desc: 'Expired or ineligible drugs safely route to verified biological waste management partners.' }
+                                ].map(item => `
+                                    <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm relative">
+                                        <span class="text-4xl font-extrabold text-slate-100 absolute top-4 right-4">${item.step}</span>
+                                        <h4 class="font-bold text-slate-900 text-lg mb-2 relative z-10">${item.title}</h4>
+                                        <p class="text-slate-600 text-sm leading-relaxed relative z-10">${item.desc}</p>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="impact" class="py-16 bg-white border-t border-slate-200">
+                        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                            <div class="grid md:grid-cols-3 gap-8 text-center">
+                                <div class="p-6">
+                                    <div class="text-4xl font-extrabold text-brand-600">₹14.2M+</div>
+                                    <div class="text-slate-600 text-sm mt-1 font-medium">Medicine Value Preserved</div>
+                                </div>
+                                <div class="p-6">
+                                    <div class="text-4xl font-extrabold text-brand-600">182,000+</div>
+                                    <div class="text-slate-600 text-sm mt-1 font-medium">Doses Safely Redistributed</div>
+                                </div>
+                                <div class="p-6">
+                                    <div class="text-4xl font-extrabold text-brand-600">100%</div>
+                                    <div class="text-slate-600 text-sm mt-1 font-medium">Verified Disposal Audit Trail</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    `;
+                },
+
+                dashboard(role) {
+                    return `
+                    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                        <div class="flex flex-col md:flex-row md:items-center justify-between pb-8 border-b border-slate-200 gap-4">
+                            <div>
+                                <div class="inline-flex items-center gap-2 text-xs font-bold text-brand-600 uppercase tracking-wider mb-1">
+                                    <span class="w-2 h-2 rounded-full bg-brand-600"></span> Active Console
+                                </div>
+                                <h1 class="text-2xl font-extrabold text-slate-900 capitalize">${role.replace('_', ' ')} Command Center</h1>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                ${role === 'donor' ? `<button onclick="app.openAddMedicineModal()" class="bg-brand-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2"><i data-lucide="plus" class="w-4 h-4"></i> Add Batch</button>` : ''}
+                                ${role === 'recipient' ? `<button onclick="app.openRequestModal()" class="bg-brand-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2"><i data-lucide="plus" class="w-4 h-4"></i> Request Stock</button>` : ''}
+                            </div>
+                        </div>
+
+                        <div class="mt-8">
+                            ${role === 'donor' ? app.views.donorDashboard() : ''}
+                            ${role === 'recipient' ? app.views.recipientDashboard() : ''}
+                            ${role === 'disposal_partner' ? app.views.disposalDashboard() : ''}
+                            ${role === 'admin' ? app.views.adminDashboard() : ''}
+                        </div>
+                    </div>
+                    `;
+                },
+
+                donorDashboard() {
+                    return `
+                    <div class="space-y-8">
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                <span class="text-xs text-slate-500 font-semibold">Active Inventory</span>
+                                <div class="text-2xl font-extrabold text-slate-900 mt-1">${store.inventory.length} Batches</div>
+                            </div>
+                            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                <span class="text-xs text-slate-500 font-semibold">AI High Surplus Risk</span>
+                                <div class="text-2xl font-extrabold text-amber-600 mt-1">1 Batch</div>
+                            </div>
+                            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                <span class="text-xs text-slate-500 font-semibold">Transfers In-Flight</span>
+                                <div class="text-2xl font-extrabold text-brand-600 mt-1">${store.transfers.length}</div>
+                            </div>
+                            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                                <span class="text-xs text-slate-500 font-semibold">Flagged for Disposal</span>
+                                <div class="text-2xl font-extrabold text-red-600 mt-1">${store.disposals.length}</div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                            <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50">
+                                <h3 class="font-bold text-slate-900">Tracked Medicine Stock</h3>
+                                <span class="text-xs font-semibold text-slate-500">Batch-Level Transparency</span>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left border-collapse text-sm">
+                                    <thead>
+                                        <tr class="border-b border-slate-200 bg-slate-50 text-slate-500 font-semibold text-xs uppercase tracking-wider">
+                                            <th class="p-4">Medicine & Category</th>
+                                            <th class="p-4">Batch</th>
+                                            <th class="p-4">Quantity</th>
+                                            <th class="p-4">Expiry</th>
+                                            <th class="p-4">AI Risk Assessment</th>
+                                            <th class="p-4 text-right">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100">
+                                        ${store.inventory.map(item => `
+                                            <tr class="hover:bg-slate-50/80 transition-colors">
+                                                <td class="p-4">
+                                                    <div class="font-bold text-slate-900">${item.name}</div>
+                                                    <div class="text-xs text-slate-500">${item.category}</div>
+                                                </td>
+                                                <td class="p-4 font-mono text-xs">${item.batch}</td>
+                                                <td class="p-4 font-semibold">${item.qty} units</td>
+                                                <td class="p-4 text-slate-600">${item.expiry}</td>
+                                                <td class="p-4">
+                                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${item.risk === 'High Risk' ? 'bg-amber-100 text-amber-800' : (item.risk === 'Critical' ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800')}">
+                                                        ${item.risk}
+                                                    </span>
+                                                </td>
+                                                <td class="p-4 text-right">
+                                                    ${item.status === 'expired' 
+                                                        ? `<button onclick="app.triggerDisposal(${item.id})" class="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold">Dispose</button>` 
+                                                        : `<button onclick="app.runMatch(${item.id})" class="px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white rounded-lg text-xs font-bold">Smart Match</button>`}
+                                                </td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    `;
+                },
+
+                recipientDashboard() {
+                    return `
+                    <div class="space-y-8">
+                        <div class="bg-gradient-to-r from-brand-600 to-medical-700 rounded-2xl p-6 text-white shadow-lg">
+                            <h2 class="text-xl font-bold">Verified Recipient Console</h2>
+                            <p class="text-brand-100 text-sm mt-1">Accept matched surplus inventory, request emergency medical supplies, and track inbound deliveries.</p>
+                        </div>
+
+                        <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                            <h3 class="font-bold text-slate-900 mb-4">Inbound Medicine Transfers</h3>
+                            <div class="space-y-4">
+                                ${store.transfers.map(t => `
+                                    <div class="p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                        <div>
+                                            <span class="text-xs font-mono text-slate-400">ID: ${t.id}</span>
+                                            <h4 class="font-bold text-slate-900">${t.medicine} (${t.qty} units)</h4>
+                                            <p class="text-xs text-slate-500">Source Donor: ${t.donor}</p>
+                                        </div>
+                                        <div class="flex items-center gap-3">
+                                            <span class="px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 capitalize">${t.status}</span>
+                                            <button onclick="app.viewTransferDetails('${t.id}')" class="px-3 py-1.5 bg-slate-900 text-white text-xs font-bold rounded-lg">Track Logistics</button>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                    `;
+                },
+
+                disposalDashboard() {
+                    return `
+                    <div class="space-y-8">
+                        <div class="bg-slate-900 text-white rounded-2xl p-6 shadow-md">
+                            <h2 class="text-xl font-bold">Authorized Bio-Disposal Hub</h2>
+                            <p class="text-slate-400 text-sm mt-1">Review expired medicine pick-up requests and log regulatory destruction certificates.</p>
+                        </div>
+
+                        <div class="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
+                            <div class="px-6 py-4 border-b border-slate-200 font-bold">Pending Disposal Requests</div>
+                            <div class="divide-y divide-slate-100">
+                                ${store.disposals.map(d => `
+                                    <div class="p-4 flex items-center justify-between">
+                                        <div>
+                                            <div class="font-bold text-slate-900">${d.medicine} [Batch: ${d.batch}]</div>
+                                            <div class="text-xs text-slate-500">Donor: ${d.donor} | Qty: ${d.qty} units</div>
+                                        </div>
+                                        <button onclick="app.completeDisposal('${d.id}')" class="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold">Accept & Certify Disposal</button>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                    `;
+                },
+
+                adminDashboard() {
+                    return `
+                    <div class="space-y-8">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                                <div class="text-xs font-semibold text-slate-400 uppercase">Organizations</div>
+                                <div class="text-3xl font-extrabold text-slate-900 mt-2">42</div>
+                                <div class="text-xs text-emerald-600 mt-1 font-semibold">100% Fully Verified</div>
+                            </div>
+                            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                                <div class="text-xs font-semibold text-slate-400 uppercase">Total Inventory Tracked</div>
+                                <div class="text-3xl font-extrabold text-slate-900 mt-2">184,200 Doses</div>
+                                <div class="text-xs text-brand-600 mt-1 font-semibold">Live Lifecycle Audit</div>
+                            </div>
+                            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                                <div class="text-xs font-semibold text-slate-400 uppercase">System Audits</div>
+                                <div class="text-3xl font-extrabold text-slate-900 mt-2">1,240 Events</div>
+                                <div class="text-xs text-slate-500 mt-1 font-semibold">Immutable Data Trail</div>
+                            </div>
+                        </div>
+
+                        <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                            <h3 class="font-bold text-slate-900 mb-4">System Audit & Compliance Records</h3>
+                            <div class="space-y-3 font-mono text-xs">
+                                <div class="p-3 bg-slate-50 rounded-lg border border-slate-200 flex justify-between">
+                                    <span>[2026-09-01T18:30:12Z] USER_ACTION: Medicine Batch PR-2026-09 flagged for redistribution.</span>
+                                    <span class="text-slate-400">HASH: 8f9a0c...</span>
+                                </div>
+                                <div class="p-3 bg-slate-50 rounded-lg border border-slate-200 flex justify-between">
+                                    <span>[2026-09-01T17:15:40Z] SYSTEM: Expiry threshold alert generated for Batch AZ-2024-11.</span>
+                                    <span class="text-slate-400">HASH: 3b1e4d...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    `;
+                },
+
+                emergency() {
+                    return `
+                    <div class="max-w-5xl mx-auto px-4 py-12">
+                        <div class="bg-red-50 border border-red-200 rounded-3xl p-8 mb-8">
+                            <div class="flex items-center gap-3 text-red-600">
+                                <i data-lucide="siren" class="w-8 h-8"></i>
+                                <h1 class="text-2xl font-extrabold">Emergency Medicine Priority Hub</h1>
+                            </div>
+                            <p class="text-red-700 text-sm mt-2">Bypasses normal queue delays to connect disaster relief, trauma response, and critical shortages with immediate inventory.</p>
+                        </div>
+
+                        <div class="space-y-4">
+                            ${store.emergencyRequests.map(e => `
+                                <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                    <div>
+                                        <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700">${e.urgency} Urgency</span>
+                                        <h3 class="font-extrabold text-slate-900 text-lg mt-1">${e.medicine}</h3>
+                                        <p class="text-xs text-slate-500 mt-0.5">Required: ${e.qty} units | Location: ${e.location} | Target Date: ${e.requiredBy}</p>
+                                    </div>
+                                    <button onclick="app.fulfillEmergency('${e.id}')" class="bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2.5 rounded-xl text-sm transition-all shadow-md shadow-red-600/20">
+                                        Fulfill Demand Immediately
+                                    </button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    `;
+                }
+            },
+
+            // --- INTERACTION HANDLERS ---
+            openAddMedicineModal() {
+                const modal = document.getElementById('modal-content');
+                modal.innerHTML = `
+                    <div class="p-6 border-b border-slate-200 flex justify-between items-center">
+                        <h3 class="font-bold text-slate-900">Add Medicine Batch</h3>
+                        <button onclick="app.closeModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+                    </div>
+                    <form onsubmit="app.submitMedicine(event)" class="p-6 space-y-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Medicine Name</label>
+                            <input type="text" id="m-name" required placeholder="e.g. Cetirizine 10mg" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Batch Number</label>
+                                <input type="text" id="m-batch" required placeholder="CT-2026-01" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Quantity</label>
+                                <input type="number" id="m-qty" required placeholder="500" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Expiry Date</label>
+                                <input type="date" id="m-expiry" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Category</label>
+                                <input type="text" id="m-category" required placeholder="Antihistamine" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 outline-none">
+                            </div>
+                        </div>
+                        <div class="pt-4 flex justify-end gap-3">
+                            <button type="button" onclick="app.closeModal()" class="px-4 py-2 border border-slate-300 rounded-xl text-sm font-semibold">Cancel</button>
+                            <button type="submit" class="px-4 py-2 bg-brand-600 text-white rounded-xl text-sm font-bold">Register Batch</button>
+                        </div>
+                    </form>
+                `;
+                document.getElementById('modal-backdrop').classList.remove('hidden');
+                lucide.createIcons();
+            },
+
+            closeModal() {
+                document.getElementById('modal-backdrop').classList.add('hidden');
+            },
+
+            submitMedicine(e) {
+                e.preventDefault();
+                const newItem = {
+                    id: Date.now(),
+                    name: document.getElementById('m-name').value,
+                    category: document.getElementById('m-category').value,
+                    batch: document.getElementById('m-batch').value,
+                    qty: parseInt(document.getElementById('m-qty').value),
+                    expiry: document.getElementById('m-expiry').value,
+                    risk: 'Low Risk',
+                    donor: 'City Healthcare Hospital',
+                    status: 'available'
+                };
+                store.inventory.unshift(newItem);
+                this.closeModal();
+                this.toast('Medicine Batch Added Successfully!');
+                this.navigate('dashboard');
+            },
+
+            runMatch(id) {
+                const item = store.inventory.find(i => i.id === id);
+                const modal = document.getElementById('modal-content');
+                modal.innerHTML = `
+                    <div class="p-6 border-b border-slate-200 flex justify-between items-center">
+                        <h3 class="font-bold text-slate-900">AI Smart Match Engine for ${item.name}</h3>
+                        <button onclick="app.closeModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+                    </div>
+                    <div class="p-6 space-y-4">
+                        <div class="p-4 bg-brand-50 rounded-xl border border-brand-100 flex justify-between items-center text-xs">
+                            <span>Target Stock: <strong>${item.qty} units</strong></span>
+                            <span>Expiry: <strong>${item.expiry}</strong></span>
+                        </div>
+                        <h4 class="font-bold text-sm text-slate-900">Recommended Recipient Match Rankings</h4>
+                        <div class="space-y-3">
+                            <div class="p-4 border border-slate-200 rounded-xl flex justify-between items-center">
+                                <div>
+                                    <div class="font-bold text-slate-900">ABC Healthcare NGO</div>
+                                    <div class="text-xs text-slate-500">Distance: 12.4 km | Verified License</div>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-brand-600 font-extrabold">94% Score</span>
+                                    <button onclick="app.initiateTransfer('${item.name}', ${item.qty})" class="block mt-1 px-3 py-1 bg-brand-600 text-white rounded-lg text-xs font-bold">Offer Batch</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('modal-backdrop').classList.remove('hidden');
+                lucide.createIcons();
+            },
+
+            initiateTransfer(med, qty) {
+                store.transfers.push({
+                    id: `TR-${Math.floor(1000 + Math.random() * 9000)}`,
+                    medicine: med,
+                    qty: qty,
+                    donor: 'City Healthcare Hospital',
+                    recipient: 'ABC Healthcare NGO',
+                    status: 'scheduled',
+                    step: 2
+                });
+                this.closeModal();
+                this.toast('Transfer Order Initiated & Tracked!');
+                this.navigate('dashboard');
+            },
+
+            viewTransferDetails(id) {
+                const t = store.transfers.find(x => x.id === id);
+                const modal = document.getElementById('modal-content');
+                modal.innerHTML = `
+                    <div class="p-6 border-b border-slate-200 flex justify-between items-center">
+                        <h3 class="font-bold text-slate-900">Transfer Timeline - ${t.id}</h3>
+                        <button onclick="app.closeModal()" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+                    </div>
+                    <div class="p-6">
+                        <div class="relative timeline-line space-y-6">
+                            <div class="flex items-center gap-4 relative z-10">
+                                <div class="w-9 h-9 rounded-full bg-emerald-500 text-white flex items-center justify-center font-bold text-xs">✓</div>
+                                <div>
+                                    <h5 class="font-bold text-slate-900 text-sm">Transfer Initiated</h5>
+                                    <p class="text-xs text-slate-500">Matched via AI System</p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-4 relative z-10">
+                                <div class="w-9 h-9 rounded-full bg-brand-600 text-white flex items-center justify-center font-bold text-xs">2</div>
+                                <div>
+                                    <h5 class="font-bold text-slate-900 text-sm">Pickup Scheduled</h5>
+                                    <p class="text-xs text-slate-500">Verified Courier Partner Assigned</p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-4 relative z-10">
+                                <div class="w-9 h-9 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center font-bold text-xs">3</div>
+                                <div>
+                                    <h5 class="font-bold text-slate-400 text-sm">Delivery Verification</h5>
+                                    <p class="text-xs text-slate-400">Pending Recipient Confirmation</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('modal-backdrop').classList.remove('hidden');
+                lucide.createIcons();
+            },
+
+            triggerDisposal(id) {
+                const item = store.inventory.find(i => i.id === id);
+                store.disposals.push({
+                    id: `DIS-${Math.floor(100 + Math.random() * 900)}`,
+                    medicine: item.name,
+                    qty: item.qty,
+                    donor: item.donor,
+                    partner: 'CleanBio Disposal Ltd',
+                    status: 'Pending Verification',
+                    batch: item.batch
+                });
+                store.inventory = store.inventory.filter(i => i.id !== id);
+                this.toast('Expired medicine moved to Disposal Queue');
+                this.navigate('dashboard');
+            },
+
+            completeDisposal(id) {
+                store.disposals = store.disposals.filter(d => d.id !== id);
+                this.toast('Disposal Certificate Issued & Logged in Audit Trail');
+                this.navigate('dashboard');
+            },
+
+            fulfillEmergency(id) {
+                store.emergencyRequests = store.emergencyRequests.filter(e => e.id !== id);
+                this.toast('Emergency Demand Matched and Logistics Dispatched!');
+                this.navigate('dashboard');
+            }
+        };
+
+        // Application Execution Entry
+        window.addEventListener('DOMContentLoaded', () => app.init());
+    </script>
+</body>
+</html>
