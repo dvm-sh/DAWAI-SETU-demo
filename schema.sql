@@ -1,0 +1,22 @@
+-- DAWAI-SETU relational schema (prototype)
+CREATE TABLE users(id SERIAL PRIMARY KEY, name TEXT, email TEXT UNIQUE, password_hash TEXT, role TEXT);
+CREATE TABLE organizations(id SERIAL PRIMARY KEY, name TEXT, type TEXT, location TEXT, verified BOOLEAN DEFAULT FALSE);
+CREATE TABLE organization_verifications(id SERIAL PRIMARY KEY, organization_id INT REFERENCES organizations(id), status TEXT, documents JSONB, reviewed_at TIMESTAMP);
+CREATE TABLE medicines(id SERIAL PRIMARY KEY, name TEXT, category TEXT);
+CREATE TABLE medicine_batches(id SERIAL PRIMARY KEY, medicine_id INT REFERENCES medicines(id), batch_number TEXT, expiry_date DATE, storage_info TEXT);
+CREATE TABLE inventory(id SERIAL PRIMARY KEY, batch_id INT REFERENCES medicine_batches(id), donor_id INT REFERENCES users(id), quantity INT, location TEXT, status TEXT);
+CREATE TABLE medicine_requirements(id SERIAL PRIMARY KEY, organization_id INT REFERENCES organizations(id), medicine_id INT REFERENCES medicines(id), quantity_required INT, urgency TEXT);
+CREATE TABLE matches(id SERIAL PRIMARY KEY, inventory_id INT REFERENCES inventory(id), requirement_id INT REFERENCES medicine_requirements(id), score NUMERIC, status TEXT);
+CREATE TABLE transfers(id SERIAL PRIMARY KEY, match_id INT REFERENCES matches(id), status TEXT, pickup_location TEXT, destination TEXT, created_at TIMESTAMP);
+CREATE TABLE transfer_events(id SERIAL PRIMARY KEY, transfer_id INT REFERENCES transfers(id), status TEXT, actor_id INT, created_at TIMESTAMP);
+CREATE TABLE disposal_requests(id SERIAL PRIMARY KEY, inventory_id INT REFERENCES inventory(id), partner_id INT REFERENCES organizations(id), reason TEXT, status TEXT, created_at TIMESTAMP);
+CREATE TABLE disposal_events(id SERIAL PRIMARY KEY, disposal_id INT REFERENCES disposal_requests(id), status TEXT, proof_ref TEXT, created_at TIMESTAMP);
+CREATE TABLE emergency_requests(id SERIAL PRIMARY KEY, organization_id INT REFERENCES organizations(id), medicine_id INT REFERENCES medicines(id), quantity INT, urgency TEXT, location TEXT, required_by TIMESTAMP, status TEXT);
+CREATE TABLE notifications(id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id), type TEXT, message TEXT, is_read BOOLEAN DEFAULT FALSE, created_at TIMESTAMP);
+CREATE TABLE predictions(id SERIAL PRIMARY KEY, inventory_id INT REFERENCES inventory(id), predicted_demand NUMERIC, predicted_surplus NUMERIC, risk TEXT, recommendation TEXT, model_version TEXT, created_at TIMESTAMP);
+CREATE TABLE audit_logs(id SERIAL PRIMARY KEY, actor_id INT, action TEXT, entity_type TEXT, entity_id INT, previous_status TEXT, new_status TEXT, created_at TIMESTAMP);
+CREATE TABLE impact_metrics(id SERIAL PRIMARY KEY, metric_name TEXT, metric_value NUMERIC, period TEXT);
+CREATE TABLE reports(id SERIAL PRIMARY KEY, report_type TEXT, generated_by INT, file_ref TEXT, created_at TIMESTAMP);
+CREATE INDEX idx_batch_expiry ON medicine_batches(expiry_date);
+CREATE INDEX idx_inventory_status ON inventory(status);
+CREATE INDEX idx_audit_created ON audit_logs(created_at);
